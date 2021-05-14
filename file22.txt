@@ -1,0 +1,202 @@
+Create a Custom Skill for Azure Cognitive Search:
+
+Summary:
+
+Azure Cognitive Search uses an enrichment pipeline of cognitive skills to extract AI-generated fields from documents and include them in a search index. There's a comprehensive set of built-in skills that you can use, but if you have a specific requirement that isn't met by these skills, you can create a custom skill.
+
+Resources needed:
+    1. An Azure Cognitive Search resource, which will manage indexing and querying.
+    2. A Cognitive Services resource, which provides AI services for skills that your search solution can use to enrich the data in the data source with AI-generated insights.
+    3. A Storage account with a blob container in which the documents to be searched are stored.
+
+Create a new resource group and all all the necessary services in it.
+
+Setting for Storage Account:
+
+    Account kind: Storage V2
+    Replication: Locally-redundant storage (LRS)
+
+Keys  for storage can be found in Access Keys
+
+
+Upload Documents to Azure Storage:
+    1. Add necessary changes to UploadDocs.cmd.(Creates a blob acontainer and Uploads data)
+        Changes needed:
+            1. YOUR_SUBSCRIPTION_ID
+            2. YOUR_AZURE_STORAGE_ACCOUNT_NAME
+            3. YOUR_AZURE_STORAGE_KEY 
+    2. Login to azure using "az login"
+    3. UploadDocs
+
+Index the documents:
+
+    1. In the Azure portal, browse to your Azure Cognitive Search resource. Then, on its Overview page, select Import data.
+
+    2. On the Connect to your data page, in the Data Source list, select Azure Blob Storage. Then complete the data store details with the following values:
+
+            Data Source: Azure Blob Storage
+            Data source name: margies-data
+            Data to extract: Content and metadata
+            Parsing mode: Default
+            Connection string: Select Choose an existing connection. Then select your storage account, and finally select the margies container that was created by the UploadDocs.cmd script.
+            Authenticate using managed identity: Unselected
+            Container name: margies
+            Blob folder: Leave this blank
+            Description: Brochures and reviews in Margie's Travel web site.
+
+    3. Proceed to the next step (Add cognitive skills).
+
+    4. in the Attach Cognitive Services section, select your cognitive services resource.
+
+    5. In the Add enrichments section:
+
+        Change the Skillset name to margies-skillset.
+
+        Select the option Enable OCR and merge all text into merged_content field.
+
+        Ensure that the Source data field is set to merged_content.
+
+        Leave the Enrichment granularity level as Source field, which is set the entire contents of the document being indexed; but note that you can change this to extract information at more granular levels, like pages or sentences.
+    6. Refer modify search json files for selection(mostly skills)
+    7. Change the Index name to margies-index.
+
+    8. Ensure that the Key is set to metadata_storage_path and leave the Suggester name and Search mode blank.
+    9. Refer index json in modify serach folder for settings
+    10. Change the Indexer name to margies-indexer.
+
+    11. Leave the Schedule set to Once.
+
+    12. Expand the Advanced options, and ensure that the Base-64 encode keys option is selected (generally encoding keys make the index more efficient).
+
+    13. Select Submit to create the data source, skillset, index, and indexer. The indexer is run automatically and runs the indexing pipeline, which:
+
+        - Extracts the document metadata fields and content from the data source
+        - Runs the skillset of cognitive skills to generate additional enriched fields
+        - Maps the extracted fields to the index.
+    14. In the bottom half of the Overview page for your Azure Cognitive Search resource, view the Indexers tab, which should show the newly created margies-indexer. Wait a few minutes, and click ↻ Refresh until the Status indicates success.
+
+Search Index:
+
+    1. Go to overview and select Search Explorer
+    2. Type queries in Query string box
+    3. Sample Queries:
+        1. *
+        2. search=*&$count=true
+        3. search=*&$count=true&$select=metadata_storage_name,metadata_author,locations
+        4. search="New York"&$count=true&$select=metadata_storage_name,keyphrases
+        5. search="New York"&$count=true&$select=metadata_storage_name&$filter=metadata_author eq 'Reviewer'
+
+Modifying Skill set(Didnt work for me manually edited json in Azure portal):
+    Setup:
+    In modify-search.cmd:
+        Parameters:
+            YOUR_SEARCH_URL: Found in Overview page of Cognative Search.
+            YOUR_ADMIN_KEY: In keys page, Primary admin keyphrases
+    In skillset.json:
+        Parameters: YOUR_COGNITIVE_SERVICES_KEY
+        changes to make note of:
+        {
+            "@odata.type": "#Microsoft.Skills.Text.SentimentSkill",
+            "defaultLanguageCode": "en",
+            "name": "get-sentiment",
+            "description": "New skill to evaluate sentiment",
+            "context": "/document",
+            "inputs": [
+                {
+                    "name": "text",
+                    "source": "/document/merged_content"
+                },
+                {
+                    "name": "languageCode",
+                    "source": "/document/language"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "score",
+                    "targetName": "sentimentScore"
+                }
+            ]
+        }
+
+        in index.json
+            changes:
+            {
+                "name": "sentiment",
+                "type": "Edm.Double",
+                "facetable": false,
+                "filterable": true,
+                "retrievable": true,
+                "sortable": true
+            },
+            {
+                "name": "url",
+                "type": "Edm.String",
+                "facetable": false,
+                "filterable": true,
+                "retrievable": true,
+                "searchable": false,
+                "sortable": false
+            }
+
+        in indexer.json:
+            In fieldMappings:
+                {
+                    "sourceFieldName" : "metadata_storage_path",
+                    "targetFieldName" : "url"
+                }
+                Note: In the fieldMappings list, note the mapping for the metadata_storage_path value to the base-64 encoded key field. This was created when you assigned the metadata_storage_path as the key and selected the option to encode the key in the Azure portal. Additionally, a new mapping explicitly maps the same value to the url field, but without the Base-64 encoding
+            
+            In ouputFieldMappings:
+                {
+                    "sourceFieldName": "/document/sentimentScore",
+                    "targetFieldName": "sentiment"
+                }
+                Note: which maps outputs from the skills in the skillset to index fields. Most of these reflect the choices you made in the user interface, but the following mapping has been added to map the sentimentScore value extracted by your sentiment skill to the sentiment field you added to the index
+        
+Running and quering modified index:
+    1. modify-search
+    2. Sample Query:
+        search=London&$select=url,sentiment,keyphrases&$filter=metadata_author eq 'Reviewer' and sentiment gt 0.5
+    Note: This query retrieves the url, sentiment, and keyphrases for all documents that mention London authored by Reviewer that have a sentiment score greater than 0.5 (in other words, positive reviews that mention London)
+
+
+Prepare to Use Azure Cognative Search SDK:
+    Setup:
+    pip install azure-search-documents==11.0.0
+    Code Summary (app.py):
+        1. In the search_query function, find the comment Create a search client, and note that the code creates a SearchClient object using the endpoint and query key for your Azure Cognitive Search resource:
+        2. In the search_query function, find the comment Submit search query, and review the code to submit a search for the specified text with the following options:
+            - A search mode that requires all of the individual words in the search text are found.
+            - The total number of documents found by the search is included in the results.
+            - The results are filtered to include only documents that match the provided filter expression.
+            - The results are sorted into the specified sort order.
+            - Each discrete value of the metadata_author field is returned as a facet that can be used to display pre-defined values for filtering.
+            - Up to three extracts of the merged_content and imageCaption fields with the search terms highlighted are included in the results.
+            - The results include only the fields specified.
+
+    Code summary(templates/search.html):
+        1. The page begins with a search form that the user can use to submit a new search (in the Python version of the application, this form is defined in the base.html template), which is referenced at the beginning of the page.
+        2. A second form is then rendered, enabling the user to refine the search results. The code for this form:
+            - Retrieves and displays the count of documents from the search results.
+            - Retrieves the facet values for the metadata_author field and displays them as an option list for filtering.
+            - Creates a drop-down list of sort options for the results.
+        3. The code then iterates through the search results, rendering each result as follows:
+            - Display the metadata_storage_name (file name) field as a link to the address in the url field.
+            - Displaying highlights for search terms found in the merged_content and imageCaption fields to help show the search terms in context.
+            - Display the metadata_author, metadata_storage_size, metadata_storage_last_modified, and language fields.
+            - Indicate the sentiment using an emoticon (🙂 for scores of 0.5 or higher, and 🙁 for scores less than 0.5).
+            - Display the first five keyphrases (if any).
+            - Display the first five locations (if any).
+            - Display the first five imageTags (if any).
+
+Using the app:
+    1. flask run
+    2. sample key words:
+        London hotel 
+        quiet hotel in New York
+        Tower of London
+        skyscraper
+        Mojave desert
+
+Documentation: https://docs.microsoft.com/en-us/azure/search/search-what-is-azure-search

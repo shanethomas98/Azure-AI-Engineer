@@ -1,0 +1,59 @@
+Create a Knowledge Store with Azure Cognitive Search:
+
+    Azure Cognitive Search uses an enrichment pipeline of cognitive skills to extract AI-generated fields from documents and include them in a search index. While the index might be considered the primary output from an indexing process, the enriched data it contains might also be useful in other ways. For example:
+
+        - Since the index is essentially a collection of JSON objects, each representing an indexed record, it might be useful to export the objects as JSON files for integration into a data orchestration process using tools such as Azure Data Factory.
+        - You may want to normalize the index records into a relational schema of tables for analysis and reporting with tools such as Microsoft Power BI.
+        - Having extracted embedded images from documents during the indexing process, you might want to save those images as files.
+
+
+    Continue from previous practical
+
+    or
+
+    1. Create a new resouce group
+    2. run az login --output none
+    3. run az account list-locations -o table
+    4. In the output, find the Name value that corresponds with the location of your resource group (for example, for East US the corresponding name is eastus).
+    5. In the setup.cmd script, modify the subscription_id, resource_group, and location.
+    6. run Setup
+    7. Output:
+        - Storage account name
+        - Storage connection string
+        - Cognitive Services account
+        - Cognitive Services key
+        - Search service endpoint
+        - Search service admin key
+        - Search service query key
+
+    
+    Components of Search Solution:
+        - A data source that references the documents in your Azure storage container.
+        - A skillset that defines an enrichment pipeline of skills to extract AI-generated fields from the documents.
+        - An index that defines a searchable set of document records.
+        - An indexer that extracts the documents from the data source, applies the skillset, and populates the index.
+
+    
+Rest Interface:
+    1. In 24-knowledge-store folder, expand the create-search folder and select data_source.json. 
+    2. Replace the string that looks like this DefaultEndpointsProtocol=https;AccountName=ai102str123;AccountKey=12345abcdefg...==;EndpointSuffix=core.windows.net or YOUR_CONNECTION_STRING
+    3. In the create-search folder, open skillset.json
+    4. Replace YOUR_COGNITIVE_SERVICES_KEY
+    5. At the end of the collection of skills in your skillset, find the Microsoft.Skills.Util.ShaperSkill skill named define-projection. This skill defines a JSON structure for the enriched data that will be used for the projections that the pipeline will persist on the knowledge store for each document processed by the indexer.
+
+    6. At the bottom of the skillset file, observe that the skillset also includes a knowledgeStore definition, which includes a connection string for the Azure Storage account where the knowledge store is to be created, and a collection of projections. This skillset includes three projection groups:
+
+        - A group containing an object projection based on the knowledge_projection output of the shaper skill in the skillset.
+        - A group containing a file projection based on the normalized_images collection of image data extracted from the documents.
+        - A group containing the following table projections:
+            - KeyPhrases: Contains an automatically generated key column and a keyPhrase column mapped to the knowledge_projection/key_phrases/ collection output of the shaper skill.
+            - Locations: Contains an automatically generated key column and a location column mapped to the knowledge_projection/key_phrases/ collection output of the shaper skill.
+            - ImageTags: Contains an automatically generated key column and a tag column mapped to the knowledge_projection/image_tags/ collection output of the shaper skill.
+            - Docs: Contains an automatically generated key column and all of the knowledge_projection output values from the shaper skill that are not already assigned to a table.
+    7. Replace the YOUR_CONNECTION_STRING
+    8. In the create-search folder, open create-search.cmd.
+    9. Replace the YOUR_SEARCH_URL and YOUR_ADMIN_KEY variable placeholders with the Url and one of the admin keys for your Azure Cognitive Search resource.\
+    10. Right-click the the create-search folder and select Open in Integrated Terminal.Run create-search
+    11. In  Azure Cognitive Search resource, select the Indexers page and wait for the indexing process to complete.
+
+Review files in storage account

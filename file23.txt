@@ -1,0 +1,220 @@
+Create a Custom Skill for Azure Cognitive Search:
+
+Azure Cognitive Search uses an enrichment pipeline of cognitive skills to extract AI-generated fields from documents and include them in a search index. There's a comprehensive set of built-in skills that you can use, but if you have a specific requirement that isn't met by these skills, you can create a custom skill.
+
+Custom Skill: Tabulates the frequency of individual words in a document to generate a list of the top five most used words
+
+The practical can continued from the previous practical
+
+or
+
+1. Create a new resouce group
+2. run az login --output none
+3. run az account list-locations -o table
+4. In the output, find the Name value that corresponds with the location of your resource group (for example, for East US the corresponding name is eastus).
+5. In the setup.cmd script, modify the subscription_id, resource_group, and location.
+6. run setup
+7. Output:
+    - Storage account name
+    - Storage connection string
+    - Cognitive Services account
+    - Cognitive Services key
+    - Search service endpoint
+    - Search service admin key
+    - Search service query key
+
+Components of Search Solution:
+    - A data source that references the documents in your Azure storage container.
+    - A skillset that defines an enrichment pipeline of skills to extract AI-generated fields from the documents.
+    - An index that defines a searchable set of document records.
+    - An indexer that extracts the documents from the data source, applies the skillset, and populates the index.
+
+Rest Interface:
+    1. In 23-custom-search-skill folder, expand the create-search folder and select data_source.json. 
+    2. Replace the string that looks like this DefaultEndpointsProtocol=https;AccountName=ai102str123;AccountKey=12345abcdefg...==;EndpointSuffix=core.windows.net or YOUR_CONNECTION_STRING
+    3. In the create-search folder, open skillset.json
+    4. Replace YOUR_COGNITIVE_SERVICES_KEY
+    5. In the create-search folder, open create-search.cmd.
+    6. Replace the YOUR_SEARCH_URL and YOUR_ADMIN_KEY variable placeholders with the Url and one of the admin keys for your Azure Cognitive Search resource.\
+    7. Right-click the the create-search folder and select Open in Integrated Terminal.Run create-search
+    8. In  Azure Cognitive Search resource, select the Indexers page and wait for the indexing process to complete.
+
+
+Search the index:
+    1. At the top of the blade for your Azure Cognitive Search resource, select Search explorer.
+    2. In Search explorer, in the Query string box, enter the following query string, and then select Search.
+    3. Sample Query: search=London&$select=url,sentiment,keyphrases&$filter=metadata_author eq 'Reviewer' and sentiment gt 0.5
+        This query retrieves the url, sentiment, and keyphrases for all documents that mention London authored by Reviewer that have a sentiment score greater than 0.5 (in other words, positive reviews that mention London)
+        
+Create an Azure Function for a custom skill:
+
+    The search solution includes a number of built-in cognitive skills that enrich the index with information from the documents, such as the sentiment scores and lists of key phrases seen in the previous task.
+
+    You can enhance the index further by creating custom skills. For example, it might be useful to identify the words that are used most frequently in each document, but no built-in skill offers this functionality.
+
+    Steps:
+    1. In extension check if Azure Function installed.
+    2. In Azure Tab, fot o Azure Functions pane and create a new project.
+    3. Python steps:
+        Folder: Browse to 23-custom-search-skill/Python/wordcount
+        Language: Python
+        Virtual environment: Skip virtual environment
+        Template: HTTP trigger
+        Function name: wordcount
+        Authorization level: Function
+        note: If you are prompted to overwrite launch.json, do so!
+    4. Switch back to the Explorer (🗍) tab and verify that the wordcount folder now contains the code files for your Azure Function.
+        If you chose Python, the code files may be in a subfolder, also named wordcount
+    5. Go to init.py and write the following code:
+        import logging
+        import os
+        import sys
+        import json
+        from string import punctuation
+        from collections import Counter
+        import azure.functions as func
+
+
+        def main(req: func.HttpRequest) -> func.HttpResponse:
+            logging.info('Wordcount function initiated.')
+
+            # The result will be a "values" bag
+            result = {
+                "values": []
+            }
+            statuscode = 200
+
+            # We're going to exclude words from this list in the word counts
+            stopwords = ['', 'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 
+                        "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 
+                        'yourselves', 'he', 'him', 'his', 'himself', 'she', "she's", 'her', 
+                        'hers', 'herself', 'it', "it's", 'its', 'itself', 'they', 'them', 
+                        'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 
+                        'this', 'that', "that'll", 'these', 'those', 'am', 'is', 'are', 'was',
+                        'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 
+                        'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 
+                        'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 
+                        'about', 'against', 'between', 'into', 'through', 'during', 'before', 
+                        'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 
+                        'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 
+                        'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 
+                        'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 
+                        'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 
+                        'will', 'just', 'don', "don't", 'should', "should've", 'now', 'd', 'll',
+                        'm', 'o', 're', 've', 'y', 'ain', 'aren', "aren't", 'couldn', "couldn't", 
+                        'didn', "didn't", 'doesn', "doesn't", 'hadn', "hadn't", 'hasn', "hasn't", 
+                        'haven', "haven't", 'isn', "isn't", 'ma', 'mightn', "mightn't", 'mustn', 
+                        "mustn't", 'needn', "needn't", 'shan', "shan't", 'shouldn', "shouldn't", 'wasn', 
+                        "wasn't", 'weren', "weren't", 'won', "won't", 'wouldn', "wouldn't"]
+
+            try:
+                values = req.get_json().get('values')
+                logging.info(values)
+
+                for rec in values:
+                    # Construct the basic JSON response for this record
+                    val = {
+                            "recordId": rec['recordId'],
+                            "data": {
+                                "text":None
+                            },
+                            "errors": None,
+                            "warnings": None
+                        }
+                    try:
+                        # get the text to be processed from the input record
+                        txt = rec['data']['text']
+                        # remove numeric digits
+                        txt = ''.join(c for c in txt if not c.isdigit())
+                        # remove punctuation and make lower case
+                        txt = ''.join(c for c in txt if c not in punctuation).lower()
+                        # remove stopwords
+                        txt = ' '.join(w for w in txt.split() if w not in stopwords)
+                        # Count the words and get the most common 10
+                        wordcount = Counter(txt.split()).most_common(10)
+                        words = [w[0] for w in wordcount]
+                        # Add the top 10 words to the output for this text record
+                        val["data"]["text"] = words
+                    except:
+                        # An error occured for this text record, so add lists of errors and warning
+                        val["errors"] =[{"message": "An error occurred processing the text."}]
+                        val["warnings"] = [{"message": "One or more inputs failed to process."}]
+                    finally:
+                        # Add the value for this record to the response
+                        result["values"].append(val)
+            except Exception as ex:
+                statuscode = 500
+                # A global error occurred, so return an error response
+                val = {
+                        "recordId": None,
+                        "data": {
+                            "text":None
+                        },
+                        "errors": [{"message": ex.args}],
+                        "warnings": [{"message": "The request failed to process."}]
+                    }
+                result["values"].append(val)
+            finally:
+                # Return the response
+                return func.HttpResponse(body=json.dumps(result), mimetype="application/json", status_code=statuscode)
+    
+    6. Right-click the wordcount folder containing your code files and select Deploy to Function App.
+    7. Settings for Python:
+        Subscription (if prompted): Select your Azure subscription.
+        Function: Create a new Function App in Azure (Advanced)
+        Function App Name: Enter a globally unique name.
+        Runtime: Python 3.8
+        Hosting plan: Consumption
+        Resource group: The resource group containing your Azure Cognitive Search resource.
+        Note: If this resource group already contains a Windows-based web app, you will not be able to deploy a Linux-based function there. Either delete the existing web app or deploy the function to a different resource group.
+        Storage account: The storage count where the Margie's Travel docs are stored.
+        Application Insights: Skip for now
+    
+
+Testing the function:
+
+    1. Open the Azure portal, and browse to the resource group where you created the function app. Then open the app service for your function app.
+
+    2. In the blade for your app service, on the Functions page, open the wordcount function.
+
+    3. On the wordcount function blade, view the Code + Test page and open the Test/Run pane.
+
+    4.In the Test/Run pane, replace the existing Body with:
+    {
+        "values": [
+            {
+                "recordId": "a1",
+                "data":
+                {
+                "text":  "Tiger, tiger burning bright in the darkness of the night.",
+                "language": "en"
+                }
+            },
+            {
+                "recordId": "a2",
+                "data":
+                {
+                "text":  "The rain in spain stays mainly in the plains! That's where you'll find the rain!",
+                "language": "en"
+                }
+            }
+        ]
+    }
+    5. Close the Test/Run pane and in the wordcount function blade, click Get function URL.
+
+Add the custom skill to the search solution:
+
+    1. In the 23-custom-search-skill/update-search folder, open the update-skillset.json file.
+    2. ADD YOUR-FUNCTION-APP-URL and YOUR_COGNITIVE_SERVICES_KEY to skillset definition.
+    3. Additional field named get-top-words is added to update-indexer.json and update-skillset.json
+    4. In update-search.cmd replace YOUR_SEARCH_URL and YOUR_ADMIN_KEY.
+    5. Run update-search
+
+Search Index:
+    1. At the top of the blade for your Azure Cognitive Search resource, select Search explorer.
+
+    2. In Search explorer, in the Query string box, enter the following query string, and then select Search.
+
+    3. Sample query:search=Las Vegas&$select=url,top_words
+
+Documentation: https://docs.microsoft.com/en-us/azure/search/cognitive-search-custom-skill-interface
